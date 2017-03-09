@@ -212,7 +212,7 @@ merge([{A,_}|_] = As,[{B,_} = X|Bs], Acc) when A > B ->
 fetch() ->
     BTC = fetch_btc(),
     Cs = fetch_ecb(),
-    Cs ++ BTC.
+    Cs ++ BTC ++ [{?BASE_CURRENCY, 1.0}].
 
 fetch_ecb() ->
     fetch_ecb_data(z_url_fetch:fetch(?ECB_XML_URL, [])).

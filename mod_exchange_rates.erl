@@ -84,14 +84,17 @@ rates(Context) ->
     Name = z_utils:name_for_host(?MODULE, Context),
     gen_server:call(Name, rates).
 
--spec rate(binary(), #context{}) -> {ok, float()} | {error, term()}.
+-spec rate1(binary(), #context{}) -> {ok, float()} | {error, term()}.
 rate(Currency, Context) ->
-    Cry = z_string:to_upper(z_convert:to_binary(Currency)),
+    rate1(z_string:to_upper(z_convert:to_binary(Currency)), Context).
+
+rate1(<<"BTC">>, Context) -> rate1(<<"XBT">>, Context);
+rate1(Currency, Context) ->
     case base_currency(Context) of
-        Cry -> {ok, 1.0};
+        Currency -> {ok, 1.0};
         _ ->
             Name = z_utils:name_for_host(?MODULE, Context),
-            gen_server:call(Name, {rate, Cry})
+            gen_server:call(Name, {rate, Currency})
     end.
 
 -spec exchange(float()|integer(), binary(), binary(), #context{}) -> {ok, float()} | {error, term()}.
@@ -107,12 +110,60 @@ exchange(Amount, From, To, Context) ->
     ToRate = mod_exchange_rates:rate(To, Context),
     case {FromRate, ToRate} of
         {{ok, FR}, {ok, TR}} when FR > 0.0 ->
-            {ok, Amount1 / FR * TR};
+            {ok, round_currency(To, Amount1 / FR * TR)};
         {{error, _}, _} ->
             {error, currency_from};
         {_, {error, _}} ->
             {error, currency_to}
     end.
+
+%% @doc Round an amount to the number of expected digits for that currency.
+round_currency(Currency, Amount) ->
+    case exponent(z_string:to_upper(z_convert:to_binary(Currency))) of
+        0 -> round(Amount);
+        N ->
+            Exp = exp(N),
+            round(Amount * Exp) / Exp
+    end.
+
+exp(N) -> exp(N,1).
+
+exp(0, Acc) -> Acc;
+exp(N, Acc) -> exp(N-1, 10*Acc).
+
+% See https://en.wikipedia.org/wiki/ISO_4217
+exponent(<<"BHD">>) -> 3;
+exponent(<<"BIF">>) -> 0;
+exponent(<<"BYR">>) -> 0;
+exponent(<<"CLF">>) -> 4;
+exponent(<<"CLP">>) -> 0;
+exponent(<<"CVE">>) -> 0;
+exponent(<<"DJF">>) -> 0;
+exponent(<<"GNF">>) -> 0;
+exponent(<<"IQD">>) -> 3;
+exponent(<<"ISK">>) -> 0;
+exponent(<<"JOD">>) -> 3;
+exponent(<<"JPY">>) -> 0;
+exponent(<<"KMF">>) -> 0;
+exponent(<<"KRW">>) -> 0;
+exponent(<<"KWD">>) -> 3;
+exponent(<<"MGA">>) -> 1;
+exponent(<<"MRO">>) -> 1;
+exponent(<<"OMR">>) -> 3;
+exponent(<<"PYG">>) -> 0;
+exponent(<<"RWF">>) -> 0;
+exponent(<<"TND">>) -> 3;
+exponent(<<"UGX">>) -> 0;
+exponent(<<"UYI">>) -> 0;
+exponent(<<"VND">>) -> 0;
+exponent(<<"VUV">>) -> 0;
+exponent(<<"XAF">>) -> 0;
+exponent(<<"XOF">>) -> 0;
+exponent(<<"XPF">>) -> 0;
+exponent(<<"XBT">>) -> 8; % Bitcoin new
+exponent(<<"BTC">>) -> 8; % Bitcoin old
+exponent(_) -> 2.
+
 
 %% @doc Start the gen_server
 -spec start_link(list()) -> {ok, pid()} | {error, term()}.
@@ -258,9 +309,9 @@ fetch_btc_data({ok, {_FinalUrl, _Hs, Size, <<"{", _/binary>> = JSON}}) when Size
         undefined -> [];
         {struct, Rates} ->
             {<<"24h">>, Rate} = proplists:lookup(<<"24h">>, Rates),
-            [{<<"BTC">>, 1.0 / z_convert:to_float(Rate)}]
+            [{<<"XBT">>, 1.0 / z_convert:to_float(Rate)}]
     end;
 fetch_btc_data(Other) ->
-    lager:warning("Fetch of BTC data at ~p returned ~p",
+    lager:warning("Fetch of BTC (XBT) data at ~p returned ~p",
             [?BTC_JSON_URL, Other]),
     [].

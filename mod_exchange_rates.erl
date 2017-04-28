@@ -189,9 +189,12 @@ terminate(_Reason, _State) ->
 %%====================================================================
 
 merge(As, Bs) ->
-    dedup(merge(As, Bs, []), []).
+    merge(dedup(As), dedup(Bs), []).
 
-dedup([], Acc) -> Acc;
+dedup(As) ->
+    dedup(As, []).
+
+dedup([], Acc) -> lists:reverse(Acc);
 dedup([{A,_}=X,{A,_}|As], Acc) -> dedup([X|As], Acc);
 dedup([A|As], Acc) -> dedup(As, [A|Acc]).
 
@@ -201,11 +204,11 @@ merge([], Bs, Acc) ->
     lists:reverse(Acc, Bs);
 merge(As, [], Acc) ->
     lists:reverse(Acc, As);
-merge([{A,_}=X|As],[{A,_}|Bs], Acc) ->
+merge([{A,_}|_] = As,[{A,_}|Bs], Acc) ->
+    merge(As, Bs, Acc);
+merge([{A,_}|_] = As,[{B,_}=X|Bs], Acc) when A > B ->
     merge(As, Bs, [X|Acc]);
-merge([{A,_}=X|As],[{B,_}|_] = Bs, Acc) when A < B ->
-    merge(As, Bs, [X|Acc]);
-merge([{A,_}|_] = As,[{B,_} = X|Bs], Acc) when A > B ->
+merge([{A,_}=X|As], [{B,_}|_] = Bs, Acc) when A < B ->
     merge(As, Bs, [X|Acc]).
 
 

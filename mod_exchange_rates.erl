@@ -25,9 +25,10 @@
 
 -behaviour(gen_server).
 
--define(BASE_CURRENCY, <<"EUR">>).
+-define(BASE_CURRENCY, <<"USD">>).
 
 -define(BTC_JSON_URL, "http://api.bitcoincharts.com/v1/weighted_prices.json").
+-define(YAHOO_XML_URL, "https://finance.yahoo.com/webservice/v1/symbols/allcurrencies/quote").
 -define(ECB_XML_URL, "http://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml").
 
 
@@ -50,6 +51,7 @@
     base_currency/1,
     fetch/0,
     fetch_ecb/0,
+    fetch_yahoo/0,
     fetch_btc/0
     ]).
 
@@ -265,8 +267,9 @@ merge([{A,_}=X|As], [{B,_}|_] = Bs, Acc) when A < B ->
 
 fetch() ->
     BTC = fetch_btc(),
-    Cs = fetch_ecb(),
-    Cs ++ BTC ++ [{?BASE_CURRENCY, 1.0}].
+    % Cs = fetch_ecb(), -- returns in EUR, only use Yahoo data for now
+    Ys = fetch_yahoo(),
+    Ys ++ BTC ++ [{?BASE_CURRENCY, 1.0}].
 
 fetch_ecb() ->
     fetch_ecb_data(z_url_fetch:fetch(?ECB_XML_URL, [])).
@@ -298,6 +301,54 @@ fetch_ecb_data(Other) ->
 ecb_xml_error(XML) ->
     lager:warning("Unexpected XML structure in ECB data ~p", [XML]),
     [].
+
+fetch_yahoo() ->
+    fetch_yahoo_data(z_url_fetch:fetch(?YAHOO_XML_URL, [])).
+
+fetch_yahoo_data({ok, {_FinalUrl, _Hs, Size, <<"<list", _/binary>> = XML}}) when Size > 0 ->
+    case mochiweb_html:parse(XML) of
+        {<<"list">>, _, MetaResources} ->
+            {value, {<<"resources">>, _, Resources}} = lists:keysearch(<<"resources">>, 1, MetaResources),
+            lists:foldl(
+                fun
+                    ({<<"resource">>, _, Fields}, Acc) ->
+                        Price = find_field(<<"price">>, Fields),
+                        Symbol = find_field(<<"symbol">>, Fields),
+                        fetch_yahoo_1(Price, Symbol, Acc);
+                    (_, Acc) ->
+                        Acc
+                end,
+                [],
+                Resources);
+        _ ->
+            yahoo_xml_error(XML)
+    end;
+fetch_yahoo_data(Other) ->
+    lager:warning("Fetch of Yahoo data at ~p returned ~p",
+            [?YAHOO_XML_URL, Other]),
+    [].
+
+fetch_yahoo_1(undefined, _, Acc) -> Acc;
+fetch_yahoo_1(_, undefined, Acc) -> Acc;
+fetch_yahoo_1(Price, Symbol, Acc) ->
+    [Symbol1|_] = binary:split(Symbol, <<"=">>),
+    [{Symbol1, z_convert:to_float(Price)} | Acc].
+
+
+find_field(_Name, []) -> undefined;
+find_field(Name, [{<<"field">>, Args, Content}|Fs]) ->
+    case proplists:get_value(<<"name">>, Args) of
+        Name -> iolist_to_binary(Content);
+        _ -> find_field(Name, Fs)
+    end;
+find_field(Name, [_|Fs]) ->
+    find_field(Name, Fs).
+
+
+yahoo_xml_error(XML) ->
+     lager:warning("Unexpected XML structure in Yahoo data ~p", [XML]),
+     [].
+
 
 % BTC 
 fetch_btc() ->

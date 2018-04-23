@@ -31,6 +31,8 @@
 -define(YAHOO_XML_URL, "https://finance.yahoo.com/webservice/v1/symbols/allcurrencies/quote").
 -define(ECB_XML_URL, "http://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml").
 
+-define(HTTPC_TIMEOUT, 20000).
+-define(HTTPC_TIMEOUT_CONNECT, 10000).
 
 -export([
     start_link/1,
@@ -303,9 +305,19 @@ ecb_xml_error(XML) ->
     [].
 
 fetch_yahoo() ->
-    fetch_yahoo_data(z_url_fetch:fetch(?YAHOO_XML_URL, [])).
+    HttpOptions = [
+        {autoredirect, true},
+        {relaxed, true},
+        {timeout, ?HTTPC_TIMEOUT},
+        {connect_timeout, ?HTTPC_TIMEOUT_CONNECT}
+    ],
+    Options = [
+        {body_format, binary}
+    ],
+    Res = httpc:request(get, {?YAHOO_XML_URL, []}, HttpOptions, Options),
+    fetch_yahoo_data(Res).
 
-fetch_yahoo_data({ok, {_FinalUrl, _Hs, Size, <<"<list", _/binary>> = XML}}) when Size > 0 ->
+fetch_yahoo_data({ok, {_Status, _Hs, <<"<list", _/binary>> = XML}}) ->
     case mochiweb_html:parse(XML) of
         {<<"list">>, _, MetaResources} ->
             {value, {<<"resources">>, _, Resources}} = lists:keysearch(<<"resources">>, 1, MetaResources),

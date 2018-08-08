@@ -269,9 +269,9 @@ merge([{A,_}=X|As], [{B,_}|_] = Bs, Acc) when A < B ->
 
 fetch() ->
     BTC = fetch_btc(),
-    % Cs = fetch_ecb(), -- returns in EUR, only use Yahoo data for now
+    Cs = fetch_ecb(), % returns in EUR, only use Yahoo data for now
     Ys = fetch_yahoo(),
-    Ys ++ BTC ++ [{?BASE_CURRENCY, 1.0}].
+    merge(lists:sort(Ys), lists:sort(Cs)) ++ BTC ++ [{?BASE_CURRENCY, 1.0}].
 
 fetch_ecb() ->
     fetch_ecb_data(z_url_fetch:fetch(?ECB_XML_URL, [])).
@@ -281,7 +281,7 @@ fetch_ecb_data({ok, {_FinalUrl, _Hs, Size, <<"<?xml ", _/binary>> = XML}}) when 
         {<<"gesmes:Envelope">>, _Args, EnvelopeNodes} ->
             {value, {<<"Cube">>, _, Cubes}} = lists:keysearch(<<"Cube">>, 1, EnvelopeNodes),
             {value, {<<"Cube">>, _, Cube}} = lists:keysearch(<<"Cube">>, 1, Cubes),
-            lists:foldl(
+            Rates = lists:foldl(
                 fun
                     ({<<"Cube">>, Args, _}, Acc) ->
                         {<<"currency">>, Currency} = proplists:lookup(<<"currency">>, Args),
@@ -291,7 +291,16 @@ fetch_ecb_data({ok, {_FinalUrl, _Hs, Size, <<"<?xml ", _/binary>> = XML}}) when 
                         Acc
                 end,
                 [],
-                Cube);
+                Cube),
+            case proplists:get_value(?BASE_CURRENCY, Rates) of
+                undefined -> [];
+                Rate when is_float(Rate) ->
+                    lists:map(
+                        fun({C, R}) ->
+                            {C, R / Rate}
+                        end,
+                        [{<<"EUR">>, 1.0} | Rates])
+            end;
         _ ->
             ecb_xml_error(XML)
     end;
